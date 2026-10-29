@@ -572,6 +572,214 @@ docs: update Terraform documentation
    - Check security groups
    - Verify outputs
 
+## Data Persistence Strategies
+
+When the EC2 instance is recreated/rebuilt, Jenkins data is lost unless preserved. Three strategies available:
+
+### Option 1: Separate EBS Volume (Production Standard)
+
+**How it works:**
+- Create separate 100GB EBS volume for `/var/lib/jenkins`
+- Attach to instance at launch
+- When instance rebuilds, volume automatically reattaches
+- All data preserved
+
+**Implementation:**
+```hcl
+# In modules/ec2/main.tf
+resource "aws_ebs_volume" "jenkins_data" {
+  availability_zone = aws_instance.jenkins.availability_zone
+  size              = 100
+  type              = "gp3"
+  encrypted         = true
+  tags = merge(var.tags, { Name = "${var.instance_name}-data" })
+}
+
+resource "aws_volume_attachment" "jenkins_data" {
+  device_name = "/dev/sdf"
+  volume_id   = aws_ebs_volume.jenkins_data.id
+  instance_id = aws_instance.jenkins.id
+}
+```
+
+**Pros:**
+- ✅ Zero data loss
+- ✅ Production-ready
+- ✅ Persistent across rebuilds
+
+**Cons:**
+- ❌ Extra cost (~$10/month)
+- ❌ Additional infrastructure management
+
+**Cost:** ~$10/month for 100GB volume
+
+---
+
+### Option 2: S3 Daily Backups (Development Recommended)
+
+**How it works:**
+- Cron job backs up `/var/lib/jenkins` to S3 daily
+- User data restores latest backup on instance startup
+- Keep 30-day rolling backup history
+- Max data loss: 24 hours
+
+**Implementation:**
+```bash
+# In modules/ec2/user_data.sh
+
+# Create backup script
+cat > /usr/local/bin/jenkins-backup.sh << 'BACKUP_SCRIPT'
+#!/bin/bash
+JENKINS_HOME="/var/lib/jenkins"
+S3_BUCKET="cicd-state-bucket-xxx"
+BACKUP_NAME="jenkins-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+
+tar --exclude='workspace' --exclude='plugins' --exclude='logs' \
+    -czf /tmp/$BACKUP_NAME -C $JENKINS_HOME \
+    jobs users credentials.xml config.xml secrets init.groovy.d
+
+aws s3 cp /tmp/$BACKUP_NAME s3://$S3_BUCKET/jenkins-backups/
+aws s3 rm s3://$S3_BUCKET/jenkins-backups/ \
+    --recursive --older-than-days 30
+BACKUP_SCRIPT
+
+chmod +x /usr/local/bin/jenkins-backup.sh
+
+# Create restore script
+cat > /usr/local/bin/jenkins-restore.sh << 'RESTORE_SCRIPT'
+#!/bin/bash
+LATEST=$(aws s3 ls s3://$S3_BUCKET/jenkins-backups/ --recursive | \
+         awk '{print $NF}' | sort -r | head -1)
+
+if [ -n "$LATEST" ]; then
+  aws s3 cp s3://$S3_BUCKET/$LATEST /tmp/backup.tar.gz
+  tar -xzf /tmp/backup.tar.gz -C /var/lib/jenkins
+  chown -R jenkins:jenkins /var/lib/jenkins
+fi
+RESTORE_SCRIPT
+
+chmod +x /usr/local/bin/jenkins-restore.sh
+
+# Schedule daily backup at 2:00 AM
+echo "0 2 * * * jenkins /usr/local/bin/jenkins-backup.sh" | \
+  tee /etc/cron.d/jenkins-backup
+
+# Restore on startup
+/usr/local/bin/jenkins-restore.sh
+```
+
+**Pros:**
+- ✅ Very cheap (~$1/month)
+- ✅ Automatic
+- ✅ Disaster recovery (30-day history)
+- ✅ Easy to implement
+
+**Cons:**
+- ❌ Data loss up to 24 hours
+- ❌ Plugins need reinstall
+- ❌ Build history lost
+
+**Cost:** ~$1/month for S3 storage
+
+---
+
+### Option 3: Jenkins Configuration as Code (Modern)
+
+**How it works:**
+- Store Jenkins configuration in YAML files in Git
+- Store job definitions as Groovy in Git
+- User data clones repo and applies configuration
+- Instance rebuilt = config recreated automatically
+- Build history lost, but configuration preserved
+
+**Implementation:**
+```bash
+# In modules/ec2/user_data.sh
+
+# Clone Jenkins config from Git
+git clone https://github.com/your-org/jenkins-config.git /tmp/jenkins-config
+
+# Copy JCasC config
+mkdir -p /var/lib/jenkins/casc_configs
+cp /tmp/jenkins-config/jenkins.yaml /var/lib/jenkins/casc_configs/
+
+# Copy job definitions
+mkdir -p /var/lib/jenkins/jobs
+cp /tmp/jenkins-config/jobs/*.groovy /var/lib/jenkins/jobs/
+
+chown -R jenkins:jenkins /var/lib/jenkins
+```
+
+**Example jenkins.yaml:**
+```yaml
+jenkins:
+  systemMessage: "Jenkins CI/CD Server"
+  numExecutors: 4
+  
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - aws:
+              id: "aws-credentials"
+              accessKey: "${AWS_ACCESS_KEY}"
+              secretKey: "${AWS_SECRET_KEY}"
+
+unclassified:
+  location:
+    url: "http://jenkins.example.com:8080/"
+```
+
+**Pros:**
+- ✅ Free
+- ✅ Version controlled
+- ✅ Reproducible
+- ✅ Team collaboration
+
+**Cons:**
+- ❌ Learning curve (YAML/Groovy)
+- ❌ Build history lost
+- ❌ Manual job runs not captured
+- ❌ Requires Git repository
+
+**Cost:** Free
+
+---
+
+### Comparison Table
+
+| Aspect | EBS Volume | S3 Backups | JCasC |
+|--------|-----------|-----------|-------|
+| **Cost** | $10/month | $1/month | Free |
+| **Data Loss** | None | Up to 24h | Build history only |
+| **Setup Complexity** | Medium | Low | High |
+| **Restore Time** | 5 min | 5 min | 10 min |
+| **Best For** | Production | Development | Modern teams |
+| **Build History** | ✅ Preserved | ✅ Preserved | ❌ Lost |
+| **Configuration** | ✅ Preserved | ✅ Preserved | ✅ Preserved |
+| **Plugins** | ✅ Preserved | ❌ Reinstall | ❌ Reinstall |
+| **Team Friendly** | ⚠️ Manual | ✅ Automatic | ✅ Version controlled |
+
+---
+
+### Recommended Approaches
+
+**For Development (Current Use Case):**
+- **S3 Backups** - Good balance of cost and recovery
+- Optional: Also use JCasC for job definitions
+
+**For Production:**
+- **EBS Volume** - Primary persistence
+- **S3 Backups** - Secondary backup for disaster recovery
+- **JCasC** - For reproducibility across environments
+
+**Best Practice (Ultimate):**
+- EBS Volume (data safety)
+- S3 Backups (disaster recovery)
+- JCasC (configuration as code)
+
+---
+
 ## Contact & Support
 
 For questions or issues:
@@ -584,4 +792,5 @@ For questions or issues:
 
 **Last Updated**: October 28, 2026  
 **Terraform Version**: >= 1.0  
-**AWS Provider Version**: ~> 5.0
+**AWS Provider Version**: ~> 5.0  
+**Data Persistence Strategies**: Option 1 (EBS), Option 2 (S3), Option 3 (JCasC)
