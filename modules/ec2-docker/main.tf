@@ -45,11 +45,13 @@ resource "aws_iam_role_policy" "s3_access" {
           "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "s3:ListBucketVersions",
+          "s3:GetBucketVersioning"
         ]
         Resource = [
-          "arn:aws:s3:::${var.s3_bucket_name}",
-          "arn:aws:s3:::${var.s3_bucket_name}/*"
+          "arn:aws:s3:::*",
+          "arn:aws:s3:::*/*"
         ]
       }
     ]
@@ -98,4 +100,27 @@ resource "aws_instance" "jenkins" {
   }
 
   depends_on = [aws_iam_instance_profile.ec2_profile]
+}
+
+resource "aws_ebs_volume" "jenkins_data" {
+  count             = var.instance_count
+  availability_zone = aws_instance.jenkins[count.index].availability_zone
+  size              = 20
+  type              = "gp3"
+  encrypted         = true
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.instance_name}-data"
+    }
+  )
+}
+
+resource "aws_volume_attachment" "jenkins_data" {
+  count           = var.instance_count
+  device_name     = "/dev/sdf"
+  volume_id       = aws_ebs_volume.jenkins_data[count.index].id
+  instance_id     = aws_instance.jenkins[count.index].id
+  skip_destroy    = true
 }

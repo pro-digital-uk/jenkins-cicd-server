@@ -72,6 +72,15 @@ systemctl start docker
 curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
 
+# Install Terraform
+echo "Installing Terraform..."
+cd /tmp
+wget -q https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
+unzip -q terraform_1.5.7_linux_amd64.zip
+mv terraform /usr/local/bin/
+terraform version
+echo "Terraform installed successfully!"
+
 # Start Jenkins
 echo "Starting Jenkins service..."
 systemctl daemon-reload

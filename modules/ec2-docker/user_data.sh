@@ -21,12 +21,36 @@ systemctl enable docker
 systemctl start docker
 sleep 2
 
-# Create Jenkins data directory with proper permissions
-echo "Creating Jenkins data directory..."
+# Format and mount EBS volume for Jenkins data persistence
+echo "Setting up EBS volume for Jenkins data..."
+# Wait for volume to be attached
+for i in {1..30}; do
+  if [ -b /dev/nvme1n1 ]; then
+    echo "EBS volume detected"
+    break
+  fi
+  echo "Waiting for volume attachment... ($i/30)"
+  sleep 1
+done
+
+# Check if volume needs formatting
+if ! sudo blkid /dev/nvme1n1; then
+  echo "Formatting EBS volume..."
+  sudo mkfs -t ext4 /dev/nvme1n1
+fi
+
+# Mount volume
+echo "Mounting EBS volume..."
 mkdir -p /jenkins-data
-# Jenkins container runs as UID 1000, set permissions accordingly
-chown 1000:1000 /jenkins-data
-chmod 755 /jenkins-data
+sudo mount /dev/nvme1n1 /jenkins-data
+
+# Add to fstab for persistent mounting
+echo "/dev/nvme1n1 /jenkins-data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+
+# Set permissions for Jenkins container
+sudo chown 1000:1000 /jenkins-data
+sudo chmod 755 /jenkins-data
+echo "EBS volume mounted and ready!"
 
 # Pull Jenkins Docker image
 echo "Pulling Jenkins Docker image (lts)..."
@@ -67,6 +91,19 @@ for i in {1..30}; do
   echo "Waiting for password... ($i/30)"
   sleep 1
 done
+
+# Install Terraform in Jenkins container
+echo "Installing Terraform in Jenkins container..."
+docker exec jenkins bash -c "
+  apt-get update && \
+  apt-get install -y wget unzip curl && \
+  cd /tmp && \
+  wget https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip && \
+  unzip terraform_1.5.7_linux_amd64.zip && \
+  mv terraform /usr/local/bin/ && \
+  terraform version
+"
+echo "Terraform installed successfully!"
 
 # Display Jenkins information
 echo ""

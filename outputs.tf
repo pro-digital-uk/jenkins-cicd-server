@@ -33,22 +33,6 @@ output "s3_bucket_arn" {
   value       = module.s3.bucket_arn
 }
 
-# Direct Installation Outputs
-output "ec2_direct_instance_id" {
-  description = "Jenkins Direct Installation EC2 instance ID"
-  value       = try(module.ec2[0].instance_id, null)
-}
-
-output "ec2_direct_public_ip" {
-  description = "Jenkins Direct Installation public IP"
-  value       = try(module.ec2[0].public_ip, null)
-}
-
-output "jenkins_direct_url" {
-  description = "Jenkins Direct Installation URL"
-  value       = var.enable_public_ip && var.instance_count > 0 ? "http://${module.ec2[0].public_ip}:8080" : "Instance not created"
-}
-
 # Docker Installation Outputs
 output "ec2_docker_instance_id" {
   description = "Jenkins Docker EC2 instance ID"
@@ -67,6 +51,6 @@ output "jenkins_docker_url" {
 
 # Summary
 output "deployment_summary" {
-  description = "Summary of both deployments"
-  value = var.instance_count > 0 ? "\n=== JENKINS DUAL DEPLOYMENT ===\n\n[1] DIRECT INSTALLATION\n    URL: http://${module.ec2[0].public_ip}:8080\n    Instance ID: ${module.ec2[0].instance_id}\n    SSH: ssh -i jenkins-server-key.pem ec2-user@${module.ec2[0].public_ip}\n\n[2] DOCKER CONTAINER\n    URL: http://${module.ec2_docker[0].public_ip}:8080\n    Instance ID: ${module.ec2_docker[0].instance_id}\n    SSH: ssh -i jenkins-server-key.pem ec2-user@${module.ec2_docker[0].public_ip}\n" : "No instances created (instance_count = 0)"
+  description = "Jenkins Docker deployment summary"
+  value = var.instance_count > 0 ? "\n=== JENKINS DOCKER DEPLOYMENT ===\n\nURL: http://${module.ec2_docker[0].public_ip}:8080\nInstance ID: ${module.ec2_docker[0].instance_id}\nSSH: ssh -i jenkins-server-key.pem ec2-user@${module.ec2_docker[0].public_ip}\n\nInitial Admin Password:\n  docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword\n" : "No instances created (instance_count = 0)"
 }

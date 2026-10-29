@@ -28,7 +28,7 @@ module "vpc" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
   availability_zones   = slice(data.aws_availability_zones.available.names, 0, 2)
-  enable_nat_gateway   = true
+  enable_nat_gateway   = false
   environment          = var.environment
 
   tags = local.common_tags
@@ -64,30 +64,6 @@ module "s3" {
   environment = var.environment
 
   tags = local.common_tags
-}
-
-# EC2 Module - Direct Installation
-module "ec2" {
-  source = "./modules/ec2"
-
-  instance_name          = "${var.project_name}-direct"
-  instance_type          = var.instance_type
-  subnet_id              = module.vpc.public_subnet_ids[0]
-  vpc_security_group_ids = [module.security_groups.jenkins_sg_id]
-  key_name               = module.key_pair.key_pair_name
-  associate_public_ip    = var.enable_public_ip
-  s3_bucket_name         = module.s3.bucket_name
-  environment            = var.environment
-  count                   = var.instance_count
-
-  tags = merge(
-    local.common_tags,
-    {
-      DeploymentType = "Direct Installation"
-    }
-  )
-
-  depends_on = [module.key_pair, module.s3]
 }
 
 # EC2 Module - Docker Installation
