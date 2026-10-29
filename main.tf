@@ -4,6 +4,9 @@ locals {
     {
       Environment = var.environment
       Project     = var.project_name
+      Deployed_By   = "Terraform"
+      shutdown = "true"
+      startup = "true"
     }
   )
 
@@ -63,11 +66,11 @@ module "s3" {
   tags = local.common_tags
 }
 
-# EC2 Module
+# EC2 Module - Direct Installation
 module "ec2" {
   source = "./modules/ec2"
 
-  instance_name          = "${var.project_name}-server"
+  instance_name          = "${var.project_name}-direct"
   instance_type          = var.instance_type
   subnet_id              = module.vpc.public_subnet_ids[0]
   vpc_security_group_ids = [module.security_groups.jenkins_sg_id]
@@ -75,8 +78,38 @@ module "ec2" {
   associate_public_ip    = var.enable_public_ip
   s3_bucket_name         = module.s3.bucket_name
   environment            = var.environment
+  count                   = var.instance_count
 
-  tags = local.common_tags
+  tags = merge(
+    local.common_tags,
+    {
+      DeploymentType = "Direct Installation"
+    }
+  )
+
+  depends_on = [module.key_pair, module.s3]
+}
+
+# EC2 Module - Docker Installation
+module "ec2_docker" {
+  source = "./modules/ec2-docker"
+
+  instance_name          = "${var.project_name}-docker"
+  instance_type          = var.instance_type
+  subnet_id              = module.vpc.public_subnet_ids[1]
+  vpc_security_group_ids = [module.security_groups.jenkins_sg_id]
+  key_name               = module.key_pair.key_pair_name
+  associate_public_ip    = var.enable_public_ip
+  s3_bucket_name         = module.s3.bucket_name
+  environment            = var.environment
+  count                   = var.instance_count
+
+  tags = merge(
+    local.common_tags,
+    {
+      DeploymentType = "Docker Container"
+    }
+  )
 
   depends_on = [module.key_pair, module.s3]
 }

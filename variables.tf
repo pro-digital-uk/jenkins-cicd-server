@@ -37,7 +37,7 @@ variable "private_subnet_cidrs" {
 variable "instance_type" {
   description = "EC2 instance type for Jenkins server"
   type        = string
-  default     = "t3.medium"
+  default     = "t2.micro"
 }
 
 variable "key_pair_name" {
@@ -58,6 +58,7 @@ variable "enable_public_ip" {
   default     = true
 }
 
+
 variable "tags" {
   description = "Common tags for all resources"
   type        = map(string)
@@ -66,4 +67,11 @@ variable "tags" {
     ManagedBy   = "Terraform"
     Project     = "jenkins-cicd"
   }
+}
+
+
+variable "instance_count" {
+  description = "Number of EC2 instances to create"
+  type        = number
+  default     = 1
 }

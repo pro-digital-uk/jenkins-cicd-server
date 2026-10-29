@@ -33,27 +33,40 @@ output "s3_bucket_arn" {
   value       = module.s3.bucket_arn
 }
 
-output "ec2_instance_id" {
-  description = "Jenkins EC2 instance ID"
-  value       = module.ec2.instance_id
+# Direct Installation Outputs
+output "ec2_direct_instance_id" {
+  description = "Jenkins Direct Installation EC2 instance ID"
+  value       = try(module.ec2[0].instance_id, null)
 }
 
-output "ec2_instance_public_ip" {
-  description = "Jenkins EC2 instance public IP"
-  value       = module.ec2.public_ip
+output "ec2_direct_public_ip" {
+  description = "Jenkins Direct Installation public IP"
+  value       = try(module.ec2[0].public_ip, null)
 }
 
-output "ec2_instance_private_ip" {
-  description = "Jenkins EC2 instance private IP"
-  value       = module.ec2.private_ip
+output "jenkins_direct_url" {
+  description = "Jenkins Direct Installation URL"
+  value       = var.enable_public_ip && var.instance_count > 0 ? "http://${module.ec2[0].public_ip}:8080" : "Instance not created"
 }
 
-output "jenkins_url" {
-  description = "Jenkins server URL"
-  value       = var.enable_public_ip ? "http://${module.ec2.public_ip}:8080" : "Jenkins server in private subnet"
+# Docker Installation Outputs
+output "ec2_docker_instance_id" {
+  description = "Jenkins Docker EC2 instance ID"
+  value       = try(module.ec2_docker[0].instance_id, null)
 }
 
-output "ec2_iam_role_arn" {
-  description = "EC2 IAM role ARN"
-  value       = module.ec2.iam_role_arn
+output "ec2_docker_public_ip" {
+  description = "Jenkins Docker public IP"
+  value       = try(module.ec2_docker[0].public_ip, null)
+}
+
+output "jenkins_docker_url" {
+  description = "Jenkins Docker URL"
+  value       = var.enable_public_ip && var.instance_count > 0 ? "http://${module.ec2_docker[0].public_ip}:8080" : "Instance not created"
+}
+
+# Summary
+output "deployment_summary" {
+  description = "Summary of both deployments"
+  value = var.instance_count > 0 ? "\n=== JENKINS DUAL DEPLOYMENT ===\n\n[1] DIRECT INSTALLATION\n    URL: http://${module.ec2[0].public_ip}:8080\n    Instance ID: ${module.ec2[0].instance_id}\n    SSH: ssh -i jenkins-server-key.pem ec2-user@${module.ec2[0].public_ip}\n\n[2] DOCKER CONTAINER\n    URL: http://${module.ec2_docker[0].public_ip}:8080\n    Instance ID: ${module.ec2_docker[0].instance_id}\n    SSH: ssh -i jenkins-server-key.pem ec2-user@${module.ec2_docker[0].public_ip}\n" : "No instances created (instance_count = 0)"
 }
