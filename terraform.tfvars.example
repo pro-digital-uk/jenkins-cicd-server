@@ -1,0 +1,21 @@
+aws_region     = "eu-west-2"
+environment    = "dev"
+project_name   = "jenkins-cicd"
+instance_type  = "t2.micro"          # AWS free tier eligible
+key_pair_name  = "jenkins-server-key"
+
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+
+enable_public_ip = true
+
+# Note: Both Direct Installation and Docker deployments will be created
+# for demonstration and comparison purposes
+
+tags = {
+  Environment = "dev"
+  Project     = "jenkins-cicd"
+  ManagedBy   = "Terraform"
+  Owner       = "DevOps"
+}
