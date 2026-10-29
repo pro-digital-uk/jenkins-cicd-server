@@ -68,6 +68,7 @@ resource "aws_instance" "jenkins" {
   vpc_security_group_ids = var.vpc_security_group_ids
   key_name               = var.key_name
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+  count                  = var.instance_count
 
   associate_public_ip_address = var.associate_public_ip
 

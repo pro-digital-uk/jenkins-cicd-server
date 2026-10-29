@@ -1,26 +1,26 @@
 output "instance_id" {
   description = "EC2 instance ID"
-  value       = aws_instance.jenkins.id
+  value       = try(aws_instance.jenkins[0].id, null)
 }
 
 output "public_ip" {
   description = "Public IP address of the instance"
-  value       = aws_instance.jenkins.public_ip
+  value       = try(aws_instance.jenkins[0].public_ip, null)
 }
 
 output "private_ip" {
   description = "Private IP address of the instance"
-  value       = aws_instance.jenkins.private_ip
+  value       = try(aws_instance.jenkins[0].private_ip, null)
 }
 
 output "public_dns" {
   description = "Public DNS name of the instance"
-  value       = aws_instance.jenkins.public_dns
+  value       = try(aws_instance.jenkins[0].public_dns, null)
 }
 
 output "private_dns" {
   description = "Private DNS name of the instance"
-  value       = aws_instance.jenkins.private_dns
+  value       = try(aws_instance.jenkins[0].private_dns, null)
 }
 
 output "iam_role_arn" {

@@ -10,7 +10,16 @@ echo "Timestamp: $(date)"
 
 # Update system packages
 yum update -y
-yum install -y wget git java-17-amazon-corretto-devel
+yum install -y wget git
+
+# Install Java 21 from Amazon Corretto (required for latest Jenkins)
+echo "Installing Java 21 from Amazon Corretto..."
+cd /tmp
+wget -q https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz
+sudo tar -xzf amazon-corretto-21-x64-linux-jdk.tar.gz -C /usr/local/
+JAVA_DIR=$(ls -d /usr/local/amazon-corretto-21* | head -1)
+sudo update-alternatives --install /usr/bin/java java $JAVA_DIR/bin/java 1
+java -version
 
 # Install Jenkins
 echo "Installing Jenkins..."
