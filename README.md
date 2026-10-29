@@ -1,8 +1,8 @@
 # Jenkins CI/CD Server
 
-Production-ready Jenkins CI/CD server deployment on AWS using Terraform. Remote state managed in S3, automatic Jenkins installation, Docker support, and enterprise-grade security.
+Lean, cost-optimized Docker-based Jenkins CI/CD server on AWS using Terraform. Single instance with EBS persistence, no NAT overhead, Terraform & tools pre-installed. Perfect for development and small teams.
 
-**✅ Remote-first architecture** | **✅ Zero-downtime updates** | **✅ Development optimized** | **✅ Production ready**
+**✅ Docker Jenkins** | **✅ EBS Persistence** | **✅ ~$3/month** | **✅ Dev-optimized**
 
 ## Quick Start (10 minutes)
 
@@ -64,15 +64,18 @@ terraform apply tfplan
 ### Step 5: Access Jenkins
 
 ```bash
-# Get Jenkins URL
-terraform output jenkins_url
+# Get deployment summary
+terraform output deployment_summary
 
-# SSH to instance (after user data completes)
-PUBLIC_IP=$(terraform output -raw ec2_instance_public_ip)
+# Get Jenkins URL and IP
+terraform output jenkins_docker_url
+PUBLIC_IP=$(terraform output -raw ec2_docker_public_ip)
+
+# SSH to instance
 ssh -i jenkins-server-key.pem ec2-user@$PUBLIC_IP
 
-# Get initial admin password
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+# Get initial admin password from Docker container
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 
 # Open browser: http://<PUBLIC_IP>:8080
 ```
@@ -93,16 +96,17 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 VPC (eu-west-2, 10.0.0.0/16)
 ├── Public Subnet A (10.0.1.0/24)
-│   └── Jenkins EC2 (t3.medium)
-│       ├── Public IP (elastic)
+│   └── Jenkins Docker EC2 (t2.micro)
+│       ├── Public IP (35.178.45.149)
 │       ├── Security Group (8080, 22, 443)
-│       ├── 50GB encrypted EBS
-│       └── IAM Role (S3 access)
-├── Public Subnet B (10.0.2.0/24) - for HA
-├── Private Subnet A (10.0.10.0/24) - future use
-├── Private Subnet B (10.0.11.0/24) - future use
+│       ├── 20GB encrypted EBS volume
+│       ├── IAM Role (all S3 access)
+│       └── Docker Jenkins LTS + Terraform
+├── Public Subnet B (10.0.2.0/24) - for future HA
+├── Private Subnet A (10.0.10.0/24) - for future use
+├── Private Subnet B (10.0.11.0/24) - for future use
 ├── Internet Gateway (public subnet routing)
-└── Route Tables (public & private)
+└── Route Tables (public + private, no NAT)
 
 State Management
 ├── S3 Bucket (terraform-state)
@@ -128,37 +132,39 @@ SSH Access
 | Component | Details | Cost |
 |-----------|---------|------|
 | **VPC** | 10.0.0.0/16, multi-AZ subnets | Free |
-| **EC2** | t3.medium, Amazon Linux 2, 50GB gp3 | ~$30/mo |
-| **Jenkins** | Latest stable, Docker, Docker Compose | Included |
+| **EC2** | t2.micro (free tier), Amazon Linux 2 | ~$1/mo |
+| **EBS Volume** | 20GB gp3 encrypted, persistent | ~$2/mo |
+| **Jenkins** | LTS in Docker, Docker Compose | Included |
 | **S3 (State)** | Encrypted, versioned, logged | <$1/mo |
-| **S3 (Artifact)** | Encrypted, versioned, lifecycle mgmt | ~$2/mo |
+| **S3 (Artifact)** | Encrypted, versioned, lifecycle mgmt | <$1/mo |
 | **IAM** | Role + Instance Profile | Free |
 | **Key Pair** | 4096-bit RSA SSH key | Free |
 | **Security Group** | Ports 22, 443, 8080 | Free |
-| **Monitoring** | CloudWatch detailed metrics | <$1/mo |
-| **Total** | | **~$35-40/mo** |
+| **Tools** | Terraform 1.5.7, AWS CLI | Pre-installed |
+| **Total** | | **~$3/mo** ✅ |
 
 ## Features
 
-✅ **Remote State Management** - S3 + DynamoDB, no local state files  
-✅ **Jenkins Pre-configured** - Automated installation via EC2 user data  
-✅ **Docker Ready** - Docker + Docker Compose pre-installed for containerized pipelines  
-✅ **Zero-Downtime Updates** - EC2 lifecycle rules for graceful rebuilds  
+✅ **Docker Jenkins** - LTS running in container on t2.micro  
+✅ **EBS Persistence** - 20GB encrypted volume survives restarts  
+✅ **Terraform Pre-installed** - v1.5.7 in container for IaC pipelines  
+✅ **Full S3 Access** - IAM role grants access to all S3 buckets in account  
+✅ **AWS CLI Pre-installed** - For direct AWS integration  
+✅ **Zero NAT Cost** - Public subnet with IGW (saves ~$45/mo)  
 ✅ **User Data Flexibility** - Script changes won't trigger instance rebuild  
-✅ **AWS Integration** - IAM role for direct S3 access  
 ✅ **Encrypted Storage** - EBS volumes, S3 buckets, state files  
 ✅ **Multi-AZ Ready** - Subnets across 2 availability zones  
-✅ **Development Optimized** - No NAT Gateway overhead for public Jenkins  
-✅ **Production Safe** - Security groups, IAM roles, encrypted volumes  
+✅ **Development Optimized** - Minimal monthly cost (~$3)  
+✅ **Docker-in-Docker** - Capability for containerized builds  
 ✅ **CloudWatch Monitoring** - Detailed EC2 metrics enabled  
 
 ## Terraform Modules
 
 | Module | Purpose | Resources |
 |--------|---------|-----------|
-| **vpc** | Networking infrastructure | VPC, subnets, IGW, route tables |
+| **vpc** | Networking infrastructure | VPC, subnets, IGW, route tables (no NAT) |
 | **security_groups** | Network security | Jenkins security group (8080, 22, 443) |
-| **ec2** | Compute instance | EC2, IAM role, user data, monitoring |
+| **ec2-docker** | Docker Jenkins instance | EC2, EBS volume, IAM role, Docker user data |
 | **s3** | Artifact storage | S3 bucket, encryption, versioning, lifecycle |
 | **key_pair** | SSH access | RSA key pair, local PEM file |
 
@@ -168,12 +174,12 @@ Default variables (in `terraform.tfvars`):
 
 ```hcl
 # AWS Configuration
-aws_region    = "eu-west-2"        # Change to your region
+aws_region    = "eu-west-2"        # London region (change as needed)
 environment   = "dev"              # dev, staging, prod
 project_name  = "jenkins-cicd"     # Used for resource naming
 
 # Instance Configuration
-instance_type = "t3.medium"        # t3.small (dev), t3.large (heavy)
+instance_type = "t2.micro"         # Free tier eligible, minimal cost
 
 # Network Configuration
 vpc_cidr             = "10.0.0.0/16"
@@ -182,6 +188,7 @@ private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
 
 # Features
 enable_public_ip = true            # Jenkins needs public IP
+instance_count   = 1               # Single Docker Jenkins instance
 
 # S3 Bucket (state management)
 # Auto-generated unless specified
@@ -331,34 +338,39 @@ sudo systemctl restart jenkins
 - ✅ **gp3 volumes** - Better price/performance than gp2
 - ✅ **Development-focused** - Private subnets included but not used
 
-### Scaling Up
+### Scaling Up for Production
 ```hcl
-# Scale up instance type
+# Scale instance type
 instance_type = "t3.large"    # 2 vCPU, 8GB RAM (~$60/mo)
 instance_type = "m5.large"    # For high-traffic (~$65/mo)
+
+# Add redundancy
+# - Add NAT Gateway for private subnets: +$45/mo
+# - Add RDS database: +$50-200/mo
+# - Add ALB for HA: +$20/mo
 ```
 
 ## Troubleshooting
 
-### Jenkins won't start
+### Jenkins won't respond on port 8080
 ```bash
 # SSH to instance
 ssh -i jenkins-server-key.pem ec2-user@<PUBLIC_IP>
 
-# Check setup progress
-sudo cat /var/log/jenkins-setup.log
+# Check if container is running
+docker ps | grep jenkins
 
-# View Jenkins logs
-sudo tail -f /var/lib/jenkins/logs/jenkins.log
+# View container logs
+docker logs -f jenkins
 
-# Start Jenkins manually
-sudo systemctl start jenkins
-sudo systemctl status jenkins
+# Restart container
+docker restart jenkins
 
-# If systemd error: fix service file
-sudo sed -i '/^\[Unit\]/,/^\[Service\]/{/StartLimit/d;}' /usr/lib/systemd/system/jenkins.service
-sudo systemctl daemon-reload
-sudo systemctl start jenkins
+# Check initial password
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+# Access Jenkins logs directory (mounted on host)
+sudo ls -la /jenkins-data/logs/
 ```
 
 ### Can't SSH to instance
@@ -403,18 +415,23 @@ aws s3 ls s3://cicd-state-bucket-<NAME>/jenkins/
 aws dynamodb scan --table-name terraform-locks
 ```
 
-### Instance won't rebuild
+### Container or instance issues
 ```bash
 # Lifecycle rules prevent user_data changes from triggering rebuilds
-# This is intentional (ignore_changes = [user_data])
+# (This is intentional: ignore_changes = [user_data])
 
-# To force rebuild:
-terraform taint module.ec2.aws_instance.jenkins
+# To manually update Jenkins:
+ssh -i jenkins-server-key.pem ec2-user@<IP>
+docker exec -it jenkins bash   # Enter container
+# Make changes as needed
+docker restart jenkins
+
+# To force instance rebuild:
+terraform taint module.ec2_docker.aws_instance.jenkins
 terraform apply
 
-# Or edit instance_type to force recreation:
-# instance_type = "t3.large"
-terraform apply
+# EBS volume persists across rebuilds (skip_destroy = true)
+# Jenkins data is safe!
 ```
 
 ## Instance Lifecycle
@@ -426,21 +443,27 @@ terraform apply
 - ✅ Subnet changes
 - ✅ Key pair changes
 
-### Graceful Updates
-- ✅ **create_before_destroy** - New instance created before old one removed
-- ✅ **Zero downtime** - Elastic IP can reassign to new instance
-- ✅ **User data ignored** - Change script without rebuilding
+### Data Persistence
+- ✅ **EBS Volume** - 20GB persistent storage for `/jenkins-data`
+- ✅ **Skip Destroy** - Volume survives instance termination
+- ✅ **Auto-reattach** - Volume reattaches on instance rebuild
+- ✅ **Zero data loss** - Jenkins data always persisted
 
 ### Manual Jenkins Updates
 ```bash
-# Edit user_data.sh
-nano modules/ec2/user_data.sh
+# Edit user_data.sh (doesn't trigger rebuild)
+nano modules/ec2-docker/user_data.sh
 
-# SSH and restart Jenkins
+# SSH and update container
 ssh -i jenkins-server-key.pem ec2-user@<IP>
-sudo systemctl restart jenkins
+docker exec -it jenkins bash
+# Make changes inside container
+docker restart jenkins
 
-# Changes apply immediately without instance rebuild
+# Or pull latest Jenkins image
+docker pull jenkins/jenkins:lts
+docker stop jenkins && docker rm jenkins
+# Re-run docker run command from user_data.sh
 ```
 
 ## Documentation
@@ -477,7 +500,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ---
 
-**Last Updated**: October 28, 2026  
+**Last Updated**: October 29, 2026  
+**Architecture**: Single Docker Jenkins with EBS persistence  
 **Terraform Version**: >= 1.0  
 **AWS Provider**: ~> 5.0  
-**Jenkins Version**: Latest stable
+**Jenkins Version**: LTS (Latest stable)  
+**Monthly Cost**: ~$3 (dev setup)

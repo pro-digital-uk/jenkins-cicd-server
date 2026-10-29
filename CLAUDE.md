@@ -5,17 +5,21 @@ This file contains project-specific configuration and guidelines for Claude Code
 ## Project Overview
 
 **Name**: Jenkins CI/CD Server  
-**Description**: Automated Jenkins CI/CD server deployment on AWS using Terraform  
-**Purpose**: Infrastructure as Code for enterprise-grade Jenkins automation  
+**Description**: Lean Docker-based Jenkins CI/CD server on AWS using Terraform  
+**Purpose**: Cost-optimized Infrastructure as Code for CI/CD automation  
+**Architecture**: Single Docker Jenkins instance with EBS persistence  
 **Repository**: cloud-skills-uk/jenkins-cicd-server
+**Monthly Cost**: ~$3 (EC2 free tier + 20GB EBS volume)
 
 ## Technology Stack
 
 - **Infrastructure**: Terraform >= 1.0
-- **Cloud Provider**: AWS
+- **Cloud Provider**: AWS (eu-west-2)
 - **Base Image**: Amazon Linux 2
-- **Jenkins**: Latest stable version
+- **Jenkins**: LTS (Latest stable) in Docker container
 - **Container Runtime**: Docker + Docker Compose
+- **Persistence**: 20GB encrypted EBS volume
+- **Tools**: Terraform 1.5.7, AWS CLI pre-installed
 - **Language**: HCL (Terraform)
 
 ## Project Structure
@@ -33,9 +37,9 @@ This file contains project-specific configuration and guidelines for Claude Code
 ├── CLAUDE.md                  # This file
 ├── LICENSE                    # MIT License
 └── modules/
-    ├── vpc/                   # VPC module with subnets, IGW, NAT
+    ├── vpc/                   # VPC module with subnets, IGW (no NAT)
     ├── security_groups/       # Security groups for Jenkins
-    ├── ec2/                   # EC2 instance with user data
+    ├── ec2-docker/            # Docker Jenkins EC2 with EBS volume
     ├── s3/                    # S3 bucket with encryption & versioning
     └── key_pair/              # SSH key pair generation
 ```
@@ -396,18 +400,24 @@ jobs:
 
 ## Cost Management
 
-### Estimated Monthly Costs (US-East-1)
-- EC2 (t3.medium): ~$30
-- NAT Gateway: ~$45
-- S3 (100GB): ~$2.50
-- **Total**: ~$80-100/month
+### Current Monthly Costs (eu-west-2) - Demo Setup
+- EC2 (t2.micro): ~$1 (or free tier)
+- EBS (20GB gp3): ~$2
+- S3 (state bucket): <$1
+- **Total**: **~$3/month** ✅
 
-### Cost Optimization Tips
-1. Use spot instances for non-critical environments
-2. Stop instance when not in use
-3. Remove unused resources
-4. Use S3 intelligent tiering
-5. Monitor CloudWatch metrics
+### Cost Optimization Applied
+- ✅ **Removed NAT Gateway** - Saves ~$45/month (Jenkins in public subnet)
+- ✅ **t2.micro instance** - Free tier eligible vs t3.medium
+- ✅ **20GB EBS volume** - Minimal for development
+- ✅ **No NAT overhead** - Public subnet direct IGW access
+
+### Scaling Up (if production needed)
+```hcl
+instance_type = "t3.large"    # 2 vCPU, 8GB RAM (~$60/mo)
+# Add NAT Gateway if private instances needed: +$45/mo
+# Add RDS database: +$50-200/mo depending on size
+```
 
 ## Documentation
 
