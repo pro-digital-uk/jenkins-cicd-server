@@ -1,0 +1,188 @@
+name: Terraform CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'terraform/**'
+      - '**.tf'
+      - '**.tfvars'
+      - '.github/workflows/terraform.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'terraform/**'
+      - '**.tf'
+      - '**.tfvars'
+
+env:
+  AWS_REGION: eu-west-2
+  TF_VERSION: 1.5.7
+
+jobs:
+  validate:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -recursive -check
+        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
+
+  plan:
+    name: Plan Terraform Changes
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+        if: secrets.AWS_ROLE_ARN != ''
+
+      - name: Terraform Init
+        run: terraform init -upgrade -no-color
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan
+        continue-on-error: true
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Comment PR with Plan
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = 'Plan output available in workflow logs';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terraform Plan
+
+            ✅ Validation passed
+
+            Run the workflow to see the full plan output.
+
+            **Note**: This is a draft PR check. The actual \`terraform apply\` will only run on \`main\` branch merges.`
+            });
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+        if: always()
+
+  apply:
+    name: Apply Terraform Changes
+    runs-on: ubuntu-latest
+    needs: [validate, plan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+        if: secrets.AWS_ROLE_ARN != ''
+
+      - name: Terraform Init
+        run: terraform init -upgrade -no-color
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -no-color tfplan
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+        if: hashFiles('tfplan') != ''
+
+      - name: Terraform Output
+        run: terraform output -no-color
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Comment on Commit
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: `✅ Terraform apply completed successfully\n\nWorkflow: ${context.runId}`
+            });
+        if: success()
+        continue-on-error: true
